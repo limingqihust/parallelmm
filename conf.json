@@ -1,0 +1,10 @@
+{
+    "type": "naive",
+    "processor_num": 5,
+    "A_row": 8,
+    "A_col_B_row": 10,
+    "B_col": 4,
+    "ec_k": 2,
+    "fail_index": 1,
+    "struggle_time": 1
+}
