@@ -2,7 +2,10 @@ from charm4py import charm, Chare, Array, Reducer
 import numpy as np
 from config import Config
 import time
+import checkpoint
 
+checkpoint_manager = checkpoint.CheckpointManager()
+use_checkpoint = True
 class MatrixGenerator:
     def __init__(self, call) -> None:
         self.generator = call
@@ -24,7 +27,36 @@ class MatrixMul(Chare):
         start = time.time()
         if self.index == self.fail_index:
             time.sleep(self.struggle_time*10e-3)
-        C_slice = np.dot(self.A_slice, self.B)
+        
+        # C_slice = np.dot(self.A_slice, self.B)
+        rows_A, cols_A = self.A_slice.shape[0], self.A_slice.shape[1]
+        cols_B = self.B.shape[1]
+        C_slice = np.zeros((rows_A, cols_B))
+        x_start = 0
+        y_start = 0
+        
+        if use_checkpoint:
+            checkpoint = checkpoint_manager.load_checkpoint(self.index)
+            # print(f"Worker {self.index} loaded checkpoint: {checkpoint}")
+            if checkpoint is not None:
+                C_slice, x_start, y_start = checkpoint
+                y_start += 1
+                if y_start == cols_B:
+                    y_start = 0
+                    x_start += 1
+
+        for i in range(x_start, rows_A):
+            for j in range(y_start if i == x_start else 0, cols_B):
+                for k in range(cols_A):
+                    C_slice[i][j] += self.A_slice[i][k] * self.B[k][j]
+                
+            if use_checkpoint:
+                checkpoint_manager.save_checkpoint(self.index, C_slice, i, j)
+        
+        # if self.index == self.fail_index:
+        #     self.fail_index = -1
+        #     self.multiply()
+
         end = time.time()
         
         comp_time = end - start
@@ -48,6 +80,8 @@ class Main(Chare):
 
     def start(self, n, A, B, type, fail_index, struggle_time):
         # Split A into sub-matrices
+        self.A = A
+        self.B = B
         self.type = type
         self.n = n
         A_slices = np.array_split(A, n-1, axis=0)
@@ -110,6 +144,11 @@ class Main(Chare):
 
         print("Resulting matrix C:")
         print(C)
+        if not np.array_equal(C, np.dot(self.A, self.B)):
+            print("Correct C:")
+            print(np.dot(self.A, self.B))
+            print("Wrong C:")
+            print(C)
         print("total time: {} ms".format((comp_time + decode_time)*1000))
         charm.exit()
 
